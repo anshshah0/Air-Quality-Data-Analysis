@@ -17,7 +17,6 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         c = re.sub(r'[^a-z0-9_]+', '_', c)
         return c
     df = df.rename(columns={c: norm(c) for c in df.columns})
-    # Map aliases to standard names
     col_map = {}
     for std, aliases in POLLUTANT_ALIASES.items():
         for a in aliases:
@@ -29,7 +28,6 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def coerce_date(df: pd.DataFrame, date_col="date") -> pd.DataFrame:
     if date_col not in df.columns:
-        # best guess: try to detect a date-like column
         candidates = [c for c in df.columns if "date" in c]
         if candidates:
             date_col = candidates[0]

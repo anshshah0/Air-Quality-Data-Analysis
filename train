@@ -47,37 +47,31 @@ def main():
     if args.target not in df.columns:
         raise ValueError(f"Target '{args.target}' not in data.")
 
-    # Select features
     candidate_num = [c for c in ["pm25", "pm10", "no2", "so2", "co", "o3",
                                  "industrial_activity_proxy", "month", "dayofweek"]
                      if c in df.columns]
     candidate_cat = [c for c in ["city"] if c in df.columns]
 
-    # Drop rows with missing target
     data = df.dropna(subset=[args.target]).copy()
 
     X = data[candidate_num + candidate_cat]
     y = data[args.target].astype(float)
 
-    # basic train/test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=RANDOM_STATE
     )
 
     pipe = build_pipeline(candidate_num, candidate_cat)
 
-    # Cross-validated R^2 for robustness
     cv_scores = cross_val_score(pipe, X_train, y_train, scoring="r2", cv=5, n_jobs=None)
     print(f"[train] 5-fold CV R^2: mean={cv_scores.mean():.3f}  std={cv_scores.std():.3f}")
 
-    # Fit and evaluate
     pipe.fit(X_train, y_train)
     y_pred = pipe.predict(X_test)
     r2 = r2_score(y_test, y_pred)
     mae = mean_absolute_error(y_test, y_pred)
     print(f"[train] Test R^2={r2:.3f}  MAE={mae:.3f}")
 
-    # Persist model + a tiny metadata blob
     model_path = Path(args.model_path)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     dump({

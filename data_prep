@@ -22,7 +22,6 @@ def build_industrial_proxy(df: pd.DataFrame) -> pd.DataFrame:
     z_cols = [c for c in ["no2_z", "so2_z", "co_z"] if c in df.columns]
     if z_cols:
         df["industrial_activity_proxy_raw"] = df[z_cols].sum(axis=1)
-        # per city rolling mean
         if "city" in df.columns:
             df = df.sort_values(["city", "date"])
             df["industrial_activity_proxy"] = (
@@ -41,33 +40,26 @@ def build_industrial_proxy(df: pd.DataFrame) -> pd.DataFrame:
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = standardize_columns(df)
     df = coerce_date(df, "date")
-    # keep relevant cols if present
     keep = ["date", "city", "aqi", "pm25", "pm10", "no2", "so2", "co", "o3"]
     exist = [c for c in keep if c in df.columns]
     df = df[exist + [c for c in df.columns if c not in exist]]
 
-    # Basic filtering
     df = df.dropna(subset=["date"])
     if "aqi" in df.columns:
         df = df[df["aqi"].between(0, 500, inclusive="both") | df["aqi"].isna()]
 
-    # Handle impossible negatives in pollutants: clip at 0
     for col in ["pm25", "pm10", "no2", "so2", "co", "o3"]:
         if col in df.columns:
             df[col] = df[col].clip(lower=0)
 
-    # Remove fully duplicate rows
     df = df.drop_duplicates()
 
-    # Feature: calendar parts
     df["year"] = df["date"].dt.year
     df["month"] = df["date"].dt.month
     df["dayofweek"] = df["date"].dt.dayofweek
 
-    # Build industrial proxy
     df = build_industrial_proxy(df)
 
-    # Optional: drop extreme outliers on pollutants (99.9th percentile)
     for col in ["pm25", "pm10", "no2", "so2", "co", "o3"]:
         if col in df.columns:
             hi = df[col].quantile(0.999)
@@ -85,11 +77,9 @@ def main():
     outp = Path(args.output)
     outp.parent.mkdir(parents=True, exist_ok=True)
 
-    # Read CSV with reasonable defaults
     df = pd.read_csv(inp)
     df = clean(df)
 
-    # Quality checks
     n_rows = len(df)
     n_cities = df["city"].nunique() if "city" in df.columns else None
     print(f"[clean] rows={n_rows}, cities={n_cities}")
