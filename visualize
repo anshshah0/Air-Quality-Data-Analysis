@@ -1,0 +1,82 @@
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def lineplot_grouped(df, x, y, group, title, path):
+    plt.figure()
+    for key, sub in df.groupby(group):
+        sub = sub.sort_values(x)
+        plt.plot(sub[x], sub[y], label=str(key), linewidth=1)
+    plt.title(title)
+    plt.xlabel(x)
+    plt.ylabel(y)
+    if df[group].nunique() <= 10:  # avoid cluttered legends
+        plt.legend()
+    plt.tight_layout()
+    plt.savefig(path, dpi=200)
+    plt.close()
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--input", required=True, help="Clean parquet path")
+    p.add_argument("--outdir", default="reports/figures", help="Directory to save figures")
+    args = p.parse_args()
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_parquet(args.input)
+    if "aqi" in df.columns:
+        # 1) Long-term AQI trends (median by month per city)
+        df_m = df.copy()
+        df_m["year_month"] = df_m["date"].dt.to_period("M").dt.to_timestamp()
+        aqi_trend = (
+            df_m.dropna(subset=["aqi"])
+                .groupby(["city", "year_month"], dropna=False)["aqi"]
+                .median()
+                .reset_index()
+        )
+        lineplot_grouped(
+            aqi_trend, "year_month", "aqi", "city",
+            "Median AQI by City (Monthly)", outdir / "aqi_trend_by_city.png"
+        )
+
+    # 2) PM2.5 vs industrial proxy scatter (all cities)
+    if "pm25" in df.columns and "industrial_activity_proxy" in df.columns:
+        sub = df.dropna(subset=["pm25", "industrial_activity_proxy"]).sample(
+            min(5000, len(df)), random_state=42
+        )
+        plt.figure()
+        plt.scatter(sub["industrial_activity_proxy"], sub["pm25"], s=6, alpha=0.5)
+        plt.xlabel("Industrial Activity Proxy (7d rolling z(NO2+SO2+CO))")
+        plt.ylabel("PM2.5")
+        plt.title("PM2.5 vs Industrial Activity Proxy")
+        plt.tight_layout()
+        plt.savefig(outdir / "pm25_vs_industrial_proxy.png", dpi=200)
+        plt.close()
+
+    # 3) City AQI distribution (boxplot)
+    if "aqi" in df.columns and "city" in df.columns:
+        top_cities = (
+            df["city"].value_counts(dropna=False).head(12).index
+        )
+        sub = df[df["city"].isin(top_cities)].dropna(subset=["aqi"])
+        if not sub.empty:
+            # order by median AQI
+            med = sub.groupby("city")["aqi"].median().sort_values()
+            sub["city"] = pd.Categorical(sub["city"], categories=med.index, ordered=True)
+            plt.figure(figsize=(10, 5))
+            sub.boxplot(column="aqi", by="city", grid=False)
+            plt.suptitle("")
+            plt.title("AQI Distribution (Top 12 Cities by Data Volume)")
+            plt.xlabel("City")
+            plt.ylabel("AQI")
+            plt.tight_layout()
+            plt.savefig(outdir / "aqi_box_by_city.png", dpi=200)
+            plt.close()
+
+    print(f"[visualize] wrote figures to {outdir}")
+
+if __name__ == "__main__":
+    main()
